@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    @apply bg-black;
+  }
+  
+  body {
+    @apply bg-black text-gray-100 min-h-screen;
+  }
+
+  #root {
+    @apply min-h-screen bg-black;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+}
+
 /* Base styles */
 body {
   margin: 0;
