@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { History as HistoryIcon } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import { Navbar } from './components/Navbar'
 import { DownloadIcon, MusicIcon, VideoIcon, FolderIcon, PlayIcon, DeleteIcon } from './components/icons'
 import { DownloadHistoryItem } from './components/DownloadHistoryItem'
 import Downloader from './components/Downloader'
@@ -417,21 +418,15 @@ const App = () => {
           ${showWaveAnimation ? 'before:animate-wave' : ''}`}
       />
 
-      <div className="flex min-h-screen relative">
+      {/* Navigation Bar */}
+      <Navbar 
+        onHistoryClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        isHistoryOpen={isSidebarOpen}
+      />
+
+      <div className="flex min-h-screen relative pt-16"> {/* Added pt-16 for navbar spacing */}
         {/* Main content area */}
         <div className={`flex-1 flex flex-col p-8 transition-all duration-500 ease-in-out ${isSidebarOpen ? 'mr-96' : 'mr-0'}`}>
-          {/* History Toggle Button */}
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`fixed top-4 right-4 p-3 rounded-full bg-gray-800 hover:bg-gray-700 
-              text-gray-300 hover:text-white transition-all duration-500 ease-in-out z-50
-              border border-gray-700 hover:border-gray-600 shadow-lg
-              ${isSidebarOpen ? 'right-[calc(24rem+1rem)]' : 'right-4'}`}
-            title={isSidebarOpen ? "Hide download history" : "Show download history"}
-          >
-            <HistoryIcon className="w-6 h-6" />
-          </button>
-
           {/* Downloader Component */}
           <Downloader onDownload={handleDownload} />
 
@@ -467,8 +462,8 @@ const App = () => {
         </div>
 
         {/* Download history sidebar */}
-        <div 
-          className={`fixed right-0 top-0 bottom-0 w-96 bg-gray-900/95 backdrop-blur-sm shadow-2xl 
+        <div
+          className={`fixed right-0 top-16 bottom-0 w-96 bg-[#0F1729]/95 backdrop-blur-sm shadow-2xl 
             flex flex-col border-l border-gray-800 transform transition-all duration-500 ease-in-out 
             ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} z-40`}
         >
