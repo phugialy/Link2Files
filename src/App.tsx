@@ -341,6 +341,14 @@ const App = () => {
     }
   };
 
+  const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') => {
+    try {
+      await window.electron?.ipcRenderer.invoke(`${action}-window`);
+    } catch (error) {
+      console.error(`Failed to ${action} window:`, error);
+    }
+  };
+
   // Add delete confirmation dialog component
   const DeleteConfirmation = () => {
     if (!deleteConfirmation) return null;
@@ -376,6 +384,9 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-[#111827] text-white relative">
+      {/* Draggable title bar */}
+      <div className="fixed top-0 left-0 right-0 h-8 bg-transparent z-50 draggable" />
+
       <Toaster
         position="bottom-center"
         toastOptions={{

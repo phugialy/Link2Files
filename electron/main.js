@@ -24,12 +24,16 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 940,
+    minHeight: 560,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0F1729',
     webPreferences: {
-      nodeIntegration: false,
+      nodeIntegration: true,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    backgroundColor: '#000000'
   });
 
   // Basic error handling for certificates
@@ -47,6 +51,23 @@ function createWindow() {
   }
 
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+
+  // Window control events
+  ipcMain.handle('minimize-window', () => {
+    mainWindow.minimize();
+  });
+
+  ipcMain.handle('maximize-window', () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  });
+
+  ipcMain.handle('close-window', () => {
+    mainWindow.close();
+  });
 }
 
 // Initialize yt-dlp
