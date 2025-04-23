@@ -228,11 +228,30 @@ const App = () => {
     }
   };
 
-  const handleDeleteHistoryItem = (videoId: string) => {
-    const updatedHistory = downloadHistory.filter(item => item.id !== videoId);
-    setDownloadHistory(updatedHistory);
-    localStorage.setItem('downloadHistory', JSON.stringify(updatedHistory));
-    toast.success('Download history item deleted');
+  const handleDeleteHistoryItem = async (videoId: string, filePaths?: { mp3?: string; mp4?: string }) => {
+    try {
+      // Delete the actual files if paths are provided
+      if (filePaths) {
+        const deletePromises = [];
+        if (filePaths.mp3) {
+          deletePromises.push(window.electron?.ipcRenderer.invoke('delete-file', filePaths.mp3));
+        }
+        if (filePaths.mp4) {
+          deletePromises.push(window.electron?.ipcRenderer.invoke('delete-file', filePaths.mp4));
+        }
+        await Promise.all(deletePromises);
+      }
+
+      // Update history state and localStorage
+      const updatedHistory = downloadHistory.filter(item => item.id !== videoId);
+      setDownloadHistory(updatedHistory);
+      localStorage.setItem('downloadHistory', JSON.stringify(updatedHistory));
+      
+      toast.success('Download history item deleted');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete some files');
+    }
   };
 
   const handleRedownload = async (video: DownloadedVideo, format: 'mp3' | 'mp4') => {
@@ -418,9 +437,9 @@ const App = () => {
 
           {/* Progress Notification */}
           <div
-            className={`fixed bottom-24 left-1/2 -translate-x-1/2 transform transition-all duration-300 ${
+            className={`fixed bottom-24 left-1/2 transform transition-all duration-300 ${
               isDownloading || isFetching ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'
-            }`}
+            } ${isSidebarOpen ? '-translate-x-[calc(50%+12rem)]' : '-translate-x-1/2'}`}
           >
             <div className="flex items-center gap-3 bg-[#1F2937]/90 backdrop-blur-sm border border-blue-500/20 rounded-lg px-4 py-3 shadow-lg">
               <div className="w-32 h-1 bg-blue-500/20 rounded-full overflow-hidden">
@@ -431,12 +450,17 @@ const App = () => {
                   <div className="absolute inset-0 bg-blue-400 animate-pulse"></div>
                 </div>
               </div>
-              <span className="text-sm font-medium text-blue-400">{Math.round(downloadProgress)}%</span>
+              <span className="text-sm font-medium text-blue-400 min-w-[3rem] text-right">{Math.round(downloadProgress)}%</span>
             </div>
           </div>
 
           {error && (
-            <div className="fixed bottom-4 left-4 right-4 p-4 bg-red-900/20 text-red-400 rounded-lg border border-red-800/50" role="alert">
+            <div 
+              className={`fixed bottom-4 left-4 right-4 p-4 bg-red-900/20 text-red-400 rounded-lg border border-red-800/50 transition-all duration-300 ${
+                isSidebarOpen ? 'mr-[calc(24rem+1rem)]' : 'mr-4'
+              }`} 
+              role="alert"
+            >
               {error}
             </div>
           )}
@@ -474,6 +498,7 @@ const App = () => {
                 formats={video.formats}
                 onDownload={(url, format) => handleRedownload(video, format)}
                 onOpenLocation={(format) => handleOpenLocation(video, format)}
+                onDelete={(formats) => handleDeleteHistoryItem(video.id, formats)}
               />
             ))}
             {downloadHistory.length === 0 && (

@@ -212,4 +212,19 @@ ipcMain.handle('check-file-exists', async (_, filePath) => {
     console.error('Error checking file existence:', error);
     return false;
   }
+});
+
+// Add delete-file handler
+ipcMain.handle('delete-file', async (_, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: true }; // File doesn't exist, consider it a success
+    }
+    
+    await fs.promises.unlink(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    throw new Error(`Failed to delete file: ${error.message}`);
+  }
 }); 

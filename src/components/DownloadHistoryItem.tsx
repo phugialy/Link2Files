@@ -1,5 +1,5 @@
 import { FC, useState } from 'react';
-import { Music, Video, Folder, Copy, Check } from 'lucide-react';
+import { Music, Video, Folder, Copy, Check, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface DownloadHistoryItemProps {
@@ -12,6 +12,7 @@ interface DownloadHistoryItemProps {
   };
   onDownload: (url: string, format: 'mp3' | 'mp4') => Promise<void>;
   onOpenLocation: (format: 'mp3' | 'mp4') => Promise<void>;
+  onDelete: (formats: { mp3?: string; mp4?: string }) => Promise<void>;
 }
 
 export const DownloadHistoryItem: FC<DownloadHistoryItemProps> = ({
@@ -21,9 +22,11 @@ export const DownloadHistoryItem: FC<DownloadHistoryItemProps> = ({
   formats,
   onDownload,
   onOpenLocation,
+  onDelete,
 }) => {
   const [loadingFormat, setLoadingFormat] = useState<'mp3' | 'mp4' | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDownload = async (format: 'mp3' | 'mp4') => {
     try {
@@ -81,11 +84,35 @@ export const DownloadHistoryItem: FC<DownloadHistoryItemProps> = ({
     }
   };
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering the copy URL action
+    try {
+      setIsDeleting(true);
+      // Pass the file paths to be deleted
+      const filesToDelete = {
+        mp3: formats.mp3?.filePath,
+        mp4: formats.mp4?.filePath
+      };
+      await onDelete(filesToDelete);
+      toast.success('Video removed from history', {
+        icon: '🗑️',
+        duration: 2000,
+      });
+    } catch (error) {
+      toast.error('Failed to remove video', {
+        duration: 3000,
+      });
+      console.error('Delete error:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="bg-[#1C2333] rounded-lg overflow-hidden hover:bg-[#1F2937] transition-colors duration-200">
+    <div className="bg-[#1C2333] rounded-lg overflow-hidden hover:bg-[#1F2937] transition-colors duration-200 group/item">
       {/* Video Info Section */}
       <div 
-        className="p-4 cursor-pointer group"
+        className="p-4 cursor-pointer group relative"
         onClick={handleCopyUrl}
         role="button"
         tabIndex={0}
@@ -121,6 +148,20 @@ export const DownloadHistoryItem: FC<DownloadHistoryItemProps> = ({
             </h3>
             <p className="text-gray-400 text-sm truncate mt-1">{url}</p>
           </div>
+
+          {/* Delete Button */}
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="opacity-0 group-hover/item:opacity-100 transition-all duration-200 p-2 rounded-full"
+            aria-label="Delete from history"
+          >
+            {isDeleting ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-red-500/50 border-t-transparent" />
+            ) : (
+              <Trash2 className="w-5 h-5 text-red-400/70 hover:text-red-400 hover:scale-110 transition-all" />
+            )}
+          </button>
         </div>
       </div>
 
