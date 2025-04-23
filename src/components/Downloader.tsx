@@ -3,6 +3,7 @@ import { Download, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { FormatToggle } from './FormatToggle';
 import InfoModal from './InfoModal';
+import { Logo } from './Logo';
 
 interface DownloaderProps {
   onDownload: (url: string, format: 'mp3' | 'mp4') => Promise<void>;
@@ -11,36 +12,30 @@ interface DownloaderProps {
 const Downloader = ({ onDownload }: DownloaderProps) => {
   const [url, setUrl] = useState('');
   const [format, setFormat] = useState<'mp3' | 'mp4'>('mp4');
-  const [isLoading, setIsLoading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
-  const handleDownload = async () => {
-    if (!url.trim()) {
-      toast.error('Please enter a valid URL');
-      return;
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim()) return;
 
     try {
-      console.log('Starting download process...', { url, format });
-      setIsLoading(true);
       await onDownload(url.trim(), format);
-      console.log('Download initiated successfully');
       setUrl('');
     } catch (error) {
-      console.error('Download failed in Downloader component:', error);
-      toast.error(error instanceof Error ? error.message : 'Download failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+      console.error('Download error:', error);
+      toast.error('Failed to start download. Please try again.');
     }
   };
 
   return (
     <div className="relative w-full max-w-xl mx-auto mt-20 p-8 bg-[#0F1729] rounded-2xl shadow-xl border border-gray-800/50">
       {/* Header with Info Button */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">YouTube Video Downloader</h1>
-          <div className="flex items-center gap-1.5 mt-2 bg-yellow-900/20 text-yellow-400/90 px-2 py-1 rounded-md border border-yellow-700/30">
+      <div className="flex items-center justify-between mb-8">
+        <div className="space-y-4">
+          <div className="group cursor-default transform transition-transform duration-300 hover:scale-105">
+            <Logo className="mb-2" showText={true} />
+          </div>
+          <div className="flex items-center gap-1.5 bg-yellow-900/20 text-yellow-400/90 px-2 py-1 rounded-md border border-yellow-700/30">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd" />
             </svg>
@@ -56,48 +51,29 @@ const Downloader = ({ onDownload }: DownloaderProps) => {
         </button>
       </div>
 
-      <form onSubmit={handleDownload} className="space-y-6">
-        {/* URL Input */}
-        <div>
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="url" className="block text-sm font-medium text-gray-300">
+            Enter URL
+          </label>
           <input
+            id="url"
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Enter YouTube URL"
-            className="w-full px-4 py-3 bg-[#1C2333] text-white placeholder-gray-400 rounded-lg border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+            placeholder="Paste your link here..."
+            className="w-full px-4 py-3 bg-[#1C2333] text-white placeholder-gray-400 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500 transition-colors"
           />
         </div>
 
-        {/* Format Selection */}
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Download Format</label>
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setFormat('mp4')}
-              className={`px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
-                format === 'mp4'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <span className="font-medium">MP4</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormat('mp3')}
-              className={`px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors ${
-                format === 'mp3'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              <span className="font-medium">MP3</span>
-            </button>
-          </div>
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-300">
+            Select Format
+          </label>
+          <FormatToggle value={format} onChange={setFormat} />
         </div>
 
-        {/* Download Button */}
         <button
           type="submit"
           disabled={!url.trim()}
@@ -112,7 +88,7 @@ const Downloader = ({ onDownload }: DownloaderProps) => {
       <InfoModal
         isOpen={showInfo}
         onClose={() => setShowInfo(false)}
-        title="How to Download"
+        title="How to Use Link2File"
         content={
           <div className="space-y-6">
             {/* Legal Disclaimer */}

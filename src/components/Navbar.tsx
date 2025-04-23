@@ -2,6 +2,8 @@ import { History as HistoryIcon, Info as InfoIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { FC } from 'react'
 import InfoModal from './InfoModal'
+import { WindowControls } from './WindowControls'
+import { Logo } from './Logo'
 
 type NavbarProps = {
   onHistoryClick?: () => void
@@ -24,54 +26,45 @@ export const Navbar: FC<NavbarProps> = ({
   return (
     <>
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0F1729] border-b border-gray-800">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-white">
-              YouTube Downloader
-            </h1>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={onHistoryClick}
-                onKeyDown={handleKeyDown(onHistoryClick)}
-                className={`group relative px-4 py-2 rounded-lg text-gray-400 transition-all duration-300 ease-out
-                  ${isHistoryOpen 
-                    ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30' 
-                    : 'hover:bg-gray-800/60'
-                  }
-                `}
-                aria-label="View Download History"
-                aria-pressed={isHistoryOpen}
-                tabIndex={0}
-              >
-                <div className="flex items-center gap-2">
-                  <HistoryIcon 
-                    className={`w-5 h-5 transition-all duration-300 transform
-                      ${isHistoryOpen ? 'rotate-180 scale-110' : 'group-hover:scale-110'}
-                    `} 
-                  />
-                  <span className={`text-sm font-medium transition-all duration-300 transform
-                    ${isHistoryOpen 
-                      ? 'opacity-100 translate-x-0' 
-                      : 'opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0'
-                    }`}
-                  >
-                    History
-                  </span>
-                </div>
-                <span className={`absolute bottom-0 left-0 h-0.5 bg-blue-500 transition-all duration-300 ease-out rounded-full
-                  ${isHistoryOpen ? 'w-full' : 'w-0 group-hover:w-full'}`} 
-                />
-              </button>
-              <button
-                onClick={() => setShowInfo(true)}
-                onKeyDown={handleKeyDown(() => setShowInfo(true))}
-                className="group px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition-all duration-300"
-                aria-label="View Information"
-                tabIndex={0}
-              >
-                <InfoIcon className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
-              </button>
+        <div className="h-10 w-full flex items-center justify-between px-4">
+          {/* Left section - Draggable area with logo */}
+          <div className="flex-1 drag-region h-full flex items-center">
+            <div className="group cursor-default">
+              <Logo className="ml-2 transform transition-transform duration-300 group-hover:scale-105" />
             </div>
+          </div>
+
+          {/* Right section - Controls */}
+          <div className="flex items-center space-x-2 no-drag">
+            <button
+              onClick={onHistoryClick}
+              onKeyDown={handleKeyDown(onHistoryClick)}
+              className={`group relative p-2 rounded-lg text-gray-400 transition-all duration-300 ease-out
+                ${isHistoryOpen 
+                  ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30' 
+                  : 'hover:bg-gray-800/60'
+                }
+              `}
+              aria-label="View Download History"
+              aria-pressed={isHistoryOpen}
+              tabIndex={0}
+            >
+              <HistoryIcon 
+                className={`w-4 h-4 transition-all duration-300 transform
+                  ${isHistoryOpen ? 'rotate-180 scale-110' : 'group-hover:scale-110'}
+                `} 
+              />
+            </button>
+            <button
+              onClick={() => setShowInfo(true)}
+              onKeyDown={handleKeyDown(() => setShowInfo(true))}
+              className="group p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition-all duration-300"
+              aria-label="View Information"
+              tabIndex={0}
+            >
+              <InfoIcon className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
+            </button>
+            <WindowControls />
           </div>
         </div>
       </nav>
@@ -79,7 +72,7 @@ export const Navbar: FC<NavbarProps> = ({
       <InfoModal
         isOpen={showInfo}
         onClose={() => setShowInfo(false)}
-        title="How to Download"
+        title="How to Use Link2Files"
         content={
           <div className="space-y-6">
             {/* Legal Disclaimer */}

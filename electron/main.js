@@ -21,6 +21,22 @@ if (!app.requestSingleInstanceLock()) {
 
 // Create main window
 function createWindow() {
+  // Set up content security policy
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' data: https://www.youtube.com https://*.ytimg.com;",
+          "script-src 'self' 'unsafe-eval' 'unsafe-inline';",
+          "img-src 'self' data: https://*.ytimg.com https://i.ytimg.com;",
+          "media-src 'self' blob: data: https://*.youtube.com;",
+          "connect-src 'self' https://www.youtube.com https://*.ytimg.com;"
+        ].join(' ')
+      }
+    });
+  });
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -30,27 +46,41 @@ function createWindow() {
     titleBarStyle: 'hidden',
     backgroundColor: '#0F1729',
     webPreferences: {
-      nodeIntegration: true,
+      nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false
     },
-  });
-
-  // Basic error handling for certificates
-  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-    event.preventDefault();
-    callback(true);
   });
 
   // Load the app
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // In development, load from the dev server with proper security headers
+    mainWindow.loadURL('http://localhost:5173', {
+      userAgent: 'Chrome',
+      extraHeaders: 'pragma: no-cache\n'
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  // Prevent navigation
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const parsedUrl = new URL(url);
+    if (process.env.NODE_ENV === 'development') {
+      if (parsedUrl.origin !== 'http://localhost:5173') {
+        event.preventDefault();
+      }
+    } else {
+      event.preventDefault();
+    }
+  });
+
+  // Prevent new window creation
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
 
   // Window control events
   ipcMain.handle('minimize-window', () => {
