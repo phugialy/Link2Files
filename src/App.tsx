@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { History as HistoryIcon } from 'lucide-react'
-import toast from 'react-hot-toast'
+import toast, { Toaster } from 'react-hot-toast'
 import { DownloadIcon, MusicIcon, VideoIcon, FolderIcon, PlayIcon, DeleteIcon } from './components/icons'
 import { DownloadHistoryItem } from './components/DownloadHistoryItem'
 import Downloader from './components/Downloader'
@@ -355,7 +355,41 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 relative overflow-hidden">
+    <div className="min-h-screen bg-[#111827] text-white relative">
+      <Toaster
+        position="bottom-center"
+        toastOptions={{
+          duration: 2000,
+          style: {
+            background: '#1F2937',
+            color: '#fff',
+            borderRadius: '0.5rem',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            padding: '0.75rem 1rem',
+            gap: '0.5rem',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          },
+          success: {
+            style: {
+              background: 'rgba(17, 24, 39, 0.95)',
+              backdropFilter: 'blur(8px)',
+            },
+            iconTheme: {
+              primary: '#10B981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#EF4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
+      
       {/* Wave Animation Background */}
       <div 
         className={`absolute inset-0 bg-gradient-to-b from-gray-900 to-black transition-opacity duration-1000
@@ -382,25 +416,23 @@ const App = () => {
           {/* Downloader Component */}
           <Downloader onDownload={handleDownload} />
 
-          {/* Progress and Error States */}
-          <div className={`fixed bottom-4 left-4 right-4 bg-gray-900/95 backdrop-blur-sm p-4 rounded-lg 
-            border border-gray-800 shadow-xl transform transition-all duration-500 ease-in-out 
-            ${isDownloading || isFetching ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
+          {/* Progress Notification */}
+          <div
+            className={`fixed bottom-24 left-1/2 -translate-x-1/2 transform transition-all duration-300 ${
+              isDownloading || isFetching ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'
+            }`}
           >
-            <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 relative overflow-hidden"
-                style={{ 
-                  width: `${downloadProgress}%`,
-                  transition: 'width 0.3s ease-in-out'
-                }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-400 animate-pulse"></div>
+            <div className="flex items-center gap-3 bg-[#1F2937]/90 backdrop-blur-sm border border-blue-500/20 rounded-lg px-4 py-3 shadow-lg">
+              <div className="w-32 h-1 bg-blue-500/20 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-300 relative"
+                  style={{ width: `${downloadProgress}%` }}
+                >
+                  <div className="absolute inset-0 bg-blue-400 animate-pulse"></div>
+                </div>
               </div>
+              <span className="text-sm font-medium text-blue-400">{Math.round(downloadProgress)}%</span>
             </div>
-            <p className="text-center mt-2 text-gray-400">
-              {isFetching ? 'Preparing download...' : `${Math.round(downloadProgress)}%`}
-            </p>
           </div>
 
           {error && (
@@ -439,6 +471,7 @@ const App = () => {
                 title={video.title}
                 url={video.url}
                 thumbnail={video.thumbnail}
+                formats={video.formats}
                 onDownload={(url, format) => handleRedownload(video, format)}
                 onOpenLocation={(format) => handleOpenLocation(video, format)}
               />
