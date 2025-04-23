@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+    }
+
+    .splash-container {
+      background: rgba(17, 24, 39, 0.95);
+      border-radius: 16px;
+      padding: 2.5rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(8px);
+      width: 400px;
+    }
+
+    .app-logo {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 1rem;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: .8;
+        transform: scale(0.95);
+      }
+    }
+
+    .app-name {
+      color: #fff;
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(to right, #3b82f6, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .app-subtitle {
+      color: #9ca3af;
+      font-size: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      margin: 1.5rem 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-value {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: linear-gradient(to right, #3b82f6, #60a5fa);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .loading-tip {
+      color: #9ca3af;
+      font-size: 0.875rem;
+      margin-top: 1rem;
+      min-height: 2.5em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .loading-tip.visible {
+      opacity: 1;
+    }
+
+    .status-text {
+      color: #d1d5db;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      font-weight: 500;
+    }
+
+    .loading-icon {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 2px solid #3b82f6;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+      margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-container">
+    <svg class="app-logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 3H15L17 9L12 15L7 9L9 3Z" fill="#3b82f6"/>
+      <path d="M12 15L17 9L19 15L12 21L5 15L7 9L12 15Z" fill="#60a5fa" fill-opacity="0.6"/>
+    </svg>
+    <div class="app-name">Local Downloader</div>
+    <div class="app-subtitle">Your Personal Media Download Assistant</div>
+    
+    <div class="progress-bar">
+      <div class="progress-value" id="progress"></div>
+    </div>
+    <div class="status-text" id="status">Initializing...</div>
+    <div class="loading-tip" id="tip"></div>
+  </div>
+
+  <script>
+    const tips = [
+      "💡 You can download both MP3 and MP4 formats",
+      "🎵 High-quality audio extraction available",
+      "📱 Supports various video qualities",
+      "🔍 Search through your download history",
+      "⚡ Optimized for fast downloads",
+      "🎨 Dark mode for comfortable viewing",
+      "💾 Downloads are saved locally",
+      "🔄 Easy format switching",
+      "📂 Quick access to downloaded files",
+      "⌨️ Keyboard shortcuts supported"
+    ];
+
+    let currentTip = 0;
+    const tipElement = document.getElementById('tip');
+    const progressElement = document.getElementById('progress');
+    const statusElement = document.getElementById('status');
+
+    function showNextTip() {
+      tipElement.classList.remove('visible');
+      setTimeout(() => {
+        tipElement.textContent = tips[currentTip];
+        tipElement.classList.add('visible');
+        currentTip = (currentTip + 1) % tips.length;
+      }, 500);
+    }
+
+    // Show first tip immediately
+    showNextTip();
+    // Rotate tips every 3 seconds
+    setInterval(showNextTip, 3000);
+
+    // Listen for progress updates from the main process
+    window.electron?.ipcRenderer.on('init-progress', (progress, status) => {
+      progressElement.style.width = `${progress}%`;
+      if (status) {
+        statusElement.textContent = status;
+      }
+    });
+  </script>
+</body>
+</html> 

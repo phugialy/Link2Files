@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
-import { exec } from 'child_process'
-import path from 'path'
-import fs from 'fs'
 import { History as HistoryIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { DownloadIcon, MusicIcon, VideoIcon, FolderIcon, PlayIcon, DeleteIcon } from './components/icons'
+import { DownloadHistoryItem } from './components/DownloadHistoryItem'
+import Downloader from './components/Downloader'
 import type { VideoInfo as VideoInfoType, DownloadedVideo } from './types'
 
 // Declare the window interface for Electron
@@ -28,8 +27,6 @@ interface VideoInfo extends VideoInfoType {
 const FALLBACK_THUMBNAIL = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360"%3E%3Crect width="100%25" height="100%25" fill="%23282828"/%3E%3Cpath d="M187 153l106 54-106 54v-108z" fill="%23fff"/%3E%3C/svg%3E'
 
 const App = () => {
-  const [url, setUrl] = useState('')
-  const [format, setFormat] = useState('mp4')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [isDownloading, setIsDownloading] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
@@ -38,17 +35,31 @@ const App = () => {
   const [downloadHistory, setDownloadHistory] = useState<DownloadedVideo[]>([])
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState<{id: string, title: string} | null>(null)
+  const [showWaveAnimation, setShowWaveAnimation] = useState(false)
 
   useEffect(() => {
     const handleProgress = (_: any, progress: number) => {
+      console.log('Progress received:', progress);
       setDownloadProgress(progress);
     };
 
     const handleComplete = () => {
-      setUrl('');
+      console.log('Download complete');
       setDownloadProgress(100);
-      setVideoInfo(null);
-      toast.success('Download completed successfully!');
+      
+      // Trigger wave animation
+      setShowWaveAnimation(true);
+      
+      // Delay hiding the progress bar and show history
+      setTimeout(() => {
+        setIsDownloading(false);
+        setIsFetching(false);
+        setDownloadProgress(0);
+        setVideoInfo(null);
+        setShowWaveAnimation(false);
+        setIsSidebarOpen(true); // Auto open sidebar after download
+        toast.success('Download completed successfully!');
+      }, 1500);
     };
 
     // Add event listeners
@@ -69,20 +80,36 @@ const App = () => {
       try {
         const history = JSON.parse(savedHistory);
         // Filter out invalid entries
-        const validHistory = history.filter((item: DownloadedVideo) => {
-          const hasValidUrl = item.url && validateYouTubeUrl(item.url);
-          const hasValidFiles = Object.values(item.formats || {}).some(
-            format => format && format.filePath && fs.existsSync(format.filePath)
+        const validateHistory = async () => {
+          const validHistory = await Promise.all(
+            history.map(async (item: DownloadedVideo) => {
+              const hasValidUrl = item.url && validateYouTubeUrl(item.url);
+              const hasValidFiles = await Promise.all(
+                Object.values(item.formats || {}).map(async format => {
+                  if (!format?.filePath) return false;
+                  try {
+                    return await window.electron?.ipcRenderer.invoke('check-file-exists', format.filePath);
+                  } catch {
+                    return false;
+                  }
+                })
+              ).then(results => results.some(exists => exists));
+              
+              return hasValidUrl && hasValidFiles ? item : null;
+            })
           );
-          return hasValidUrl && hasValidFiles;
-        });
+          
+          const filteredHistory = validHistory.filter(Boolean);
+          
+          // Update storage if items were removed
+          if (filteredHistory.length !== history.length) {
+            localStorage.setItem('downloadHistory', JSON.stringify(filteredHistory));
+          }
+          
+          setDownloadHistory(filteredHistory);
+        };
         
-        // Update storage if items were removed
-        if (validHistory.length !== history.length) {
-          localStorage.setItem('downloadHistory', JSON.stringify(validHistory));
-        }
-        
-        setDownloadHistory(validHistory);
+        validateHistory();
       } catch (error) {
         console.error('Error parsing download history:', error);
         setDownloadHistory([]);
@@ -99,27 +126,20 @@ const App = () => {
     return filename.replace(/[<>:"/\\|?*]/g, '_');
   };
 
-  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUrl = e.target.value;
-    setUrl(newUrl);
-    setError(null);
-    setVideoInfo(null);
-    setDownloadProgress(0);
-  };
-
-  const handleDownload = async () => {
-    if (!url) {
-      setError('Please enter a YouTube URL');
-      return;
-    }
-
+  const handleDownload = async (url: string, format: 'mp3' | 'mp4') => {
+    console.log('Download handler called with:', { url, format });
+    
     if (!validateYouTubeUrl(url)) {
-      setError('Please enter a valid YouTube URL');
+      const error = 'Please enter a valid YouTube URL';
+      console.error(error);
+      toast.error(error);
       return;
     }
 
     if (!window.electron?.ipcRenderer) {
-      setError('Electron API not available');
+      const error = 'Electron API not available';
+      console.error(error);
+      toast.error(error);
       return;
     }
 
@@ -127,6 +147,7 @@ const App = () => {
       setError(null);
       setIsFetching(true);
       setDownloadProgress(0);
+      setIsDownloading(true); // Set downloading state at the start
 
       // Get video info
       console.log('Fetching video info...');
@@ -134,91 +155,73 @@ const App = () => {
       console.log('Video info received:', info);
       setVideoInfo(info);
       
-      setIsDownloading(true);
       setIsFetching(false);
 
       // Show save dialog
+      console.log('Opening save dialog...');
       const saveResult = await window.electron.ipcRenderer.invoke('show-save-dialog', {
         defaultPath: `${sanitizeFilename(info.videoDetails.title)}.${format}`
       });
 
+      console.log('Save dialog result:', saveResult);
+
       if (saveResult.canceled || !saveResult.filePath) {
+        console.log('Save dialog cancelled or no path selected');
         setIsDownloading(false);
+        setIsFetching(false);
         return;
       }
 
-      console.log('Starting download...');
       // Start download with format
-      await window.electron.ipcRenderer.invoke('download-video', {
+      const downloadResult = await window.electron.ipcRenderer.invoke('download-video', {
         url,
         filePath: saveResult.filePath,
         format
       });
 
-      setUrl('');
-      setDownloadProgress(100);
-      setVideoInfo(null);
+      if (!downloadResult?.success) {
+        throw new Error('Download failed - no success response');
+      }
+
+      // Add to download history
+      const newDownload: DownloadedVideo = {
+        id: Date.now().toString(),
+        url,
+        title: info.videoDetails.title,
+        thumbnail: info.videoDetails.thumbnails?.[0]?.url || '',
+        duration: `${Math.floor(parseInt(info.videoDetails.lengthSeconds) / 60)}:${(parseInt(info.videoDetails.lengthSeconds) % 60).toString().padStart(2, '0')}`,
+        downloadDate: new Date().toLocaleString(),
+        formats: {
+          [format]: {
+            filePath: saveResult.filePath,
+            downloadDate: new Date().toLocaleString()
+          }
+        }
+      };
+
+      setDownloadHistory(prev => [newDownload, ...prev]);
+      localStorage.setItem('downloadHistory', JSON.stringify([newDownload, ...downloadHistory]));
+
     } catch (err: any) {
-      console.error('Error:', err);
-      setError(err.message || 'An error occurred');
+      console.error('Download error:', err);
+      const errorMessage = err.message || 'An error occurred during download';
+      setError(errorMessage);
+      toast.error(errorMessage);
       setVideoInfo(null);
-    } finally {
       setIsDownloading(false);
       setIsFetching(false);
     }
   };
 
-  const handleOpenFileLocation = (filePath: string) => {
+  const handleOpenLocation = async (video: DownloadedVideo, format: 'mp3' | 'mp4') => {
+    const filePath = video.formats[format]?.filePath;
     if (!filePath) {
-      console.error('No file path provided');
-      toast.error('No file path provided');
+      toast.error(`No ${format.toUpperCase()} file found`);
       return;
     }
 
     try {
-      // Clean up the file path and ensure it's properly formatted for Windows
-      const cleanPath = filePath.trim().replace(/\//g, '\\');
-      console.log('Attempting to open file location:', cleanPath);
-
-      // Check if file exists
-      const fileExists = fs.existsSync(cleanPath);
-      console.log('File exists:', fileExists);
-
-      if (!fileExists) {
-        throw new Error(`File does not exist: ${cleanPath}`);
-      }
-
-      // Use the Windows System32 path for explorer
-      const explorerPath = 'C:\\Windows\\explorer.exe';
-      
-      // First try to select the file
-      const command = `"${explorerPath}" /select,"${cleanPath}"`;
-      console.log('Executing command:', command);
-
-      exec(command, (error) => {
-        if (error) {
-          console.error('Error executing select command:', error);
-          console.log('Trying fallback to open folder...');
-          
-          // If selecting fails, try to just open the folder
-          const folderPath = path.dirname(cleanPath);
-          const fallbackCommand = `"${explorerPath}" "${folderPath}"`;
-          console.log('Executing fallback command:', fallbackCommand);
-          
-          exec(fallbackCommand, (fallbackError) => {
-            if (fallbackError) {
-              console.error('Fallback also failed:', fallbackError);
-              // Try the most basic command as last resort
-              exec('start "" "' + folderPath + '"', (finalError) => {
-                if (finalError) {
-                  console.error('All attempts failed:', finalError);
-                  toast.error('Failed to open file location');
-                }
-              });
-            }
-          });
-        }
-      });
+      await window.electron?.ipcRenderer.invoke('open-file-location', filePath);
     } catch (error) {
       console.error('Failed to open file location:', error);
       toast.error('Could not open file location. The file may have been moved or deleted.');
@@ -272,7 +275,8 @@ const App = () => {
       }
 
       // Update history with new format
-      if (fs.existsSync(saveResult.filePath)) {
+      const exists = await window.electron?.ipcRenderer.invoke('check-file-exists', saveResult.filePath);
+      if (exists) {
         const updatedVideo = {
           ...video,
           formats: {
@@ -351,15 +355,23 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black text-gray-100">
-      <div className="flex min-h-screen bg-gradient-to-b from-gray-900 to-black text-gray-100 overflow-hidden">
+    <div className="min-h-screen bg-black text-gray-100 relative overflow-hidden">
+      {/* Wave Animation Background */}
+      <div 
+        className={`absolute inset-0 bg-gradient-to-b from-gray-900 to-black transition-opacity duration-1000
+          before:absolute before:inset-0 before:bg-gradient-to-r before:from-blue-500/0 before:via-blue-500/10 before:to-blue-500/0
+          after:absolute after:inset-0 after:bg-gradient-to-b after:from-gray-900 after:to-black after:opacity-90
+          ${showWaveAnimation ? 'before:animate-wave' : ''}`}
+      />
+
+      <div className="flex min-h-screen relative">
         {/* Main content area */}
-        <div className={`flex-1 flex flex-col p-8 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'mr-96' : 'mr-0'}`}>
+        <div className={`flex-1 flex flex-col p-8 transition-all duration-500 ease-in-out ${isSidebarOpen ? 'mr-96' : 'mr-0'}`}>
           {/* History Toggle Button */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className={`fixed top-4 right-4 p-3 rounded-full bg-gray-800 hover:bg-gray-700 
-              text-gray-300 hover:text-white transition-all duration-200 z-50
+              text-gray-300 hover:text-white transition-all duration-500 ease-in-out z-50
               border border-gray-700 hover:border-gray-600 shadow-lg
               ${isSidebarOpen ? 'right-[calc(24rem+1rem)]' : 'right-4'}`}
             title={isSidebarOpen ? "Hide download history" : "Show download history"}
@@ -367,104 +379,41 @@ const App = () => {
             <HistoryIcon className="w-6 h-6" />
           </button>
 
-          <div className="relative py-3 sm:max-w-xl sm:mx-auto">
-            <div className="relative px-4 py-10 bg-gray-900/80 backdrop-blur-sm shadow-xl sm:rounded-3xl sm:p-20 border border-gray-800">
-              <div className="max-w-md mx-auto">
-                <div className="divide-y divide-gray-800">
-                  <div className="py-8 text-base leading-6 space-y-4 text-gray-300 sm:text-lg sm:leading-7">
-                    <h1 className="text-2xl font-bold text-center mb-8 text-white">YouTube Video Downloader</h1>
-                    
-                    <div className="relative">
-                      <input
-                        type="text"
-                        className="w-full px-4 py-2 text-gray-300 bg-gray-800/50 rounded-lg border border-gray-700 
-                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                          placeholder-gray-500"
-                        placeholder="Enter YouTube URL"
-                        value={url}
-                        onChange={handleUrlChange}
-                        disabled={isDownloading || isFetching}
-                        aria-label="YouTube URL input"
-                      />
-                    </div>
+          {/* Downloader Component */}
+          <Downloader onDownload={handleDownload} />
 
-                    <div className="relative">
-                      <label htmlFor="format" className="block text-sm font-medium text-gray-400 mb-1">
-                        Download Format
-                      </label>
-                      <select
-                        id="format"
-                        value={format}
-                        onChange={(e) => setFormat(e.target.value)}
-                        className="w-full px-4 py-2 text-gray-300 bg-gray-800/50 rounded-lg border border-gray-700
-                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={isDownloading || isFetching}
-                        aria-label="Download format selection"
-                      >
-                        <option value="mp4">MP4 (Video)</option>
-                        <option value="mp3">MP3 (Audio Only)</option>
-                      </select>
-                    </div>
-
-                    <button
-                      onClick={handleDownload}
-                      disabled={isDownloading || isFetching || !url}
-                      className={`w-full px-4 py-2 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 
-                        transition-all duration-200 ${
-                        isDownloading || isFetching || !url
-                          ? 'bg-gray-700 cursor-not-allowed'
-                          : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20'
-                      }`}
-                      aria-label="Download video"
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <DownloadIcon />
-                        <span>{isFetching ? 'Fetching Info...' : isDownloading ? 'Downloading...' : 'Download'}</span>
-                      </div>
-                    </button>
-
-                    {videoInfo && (
-                      <div className="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-                        <h2 className="font-semibold text-white">{videoInfo.videoDetails.title}</h2>
-                        <p className="text-sm text-gray-400 mt-2">
-                          Duration: {Math.floor(parseInt(videoInfo.videoDetails.lengthSeconds) / 60)}:{(parseInt(videoInfo.videoDetails.lengthSeconds) % 60).toString().padStart(2, '0')}
-                        </p>
-                        <p className="text-sm text-gray-400">
-                          Views: {parseInt(videoInfo.videoDetails.viewCount).toLocaleString()}
-                        </p>
-                      </div>
-                    )}
-
-                    {(isDownloading || isFetching) && (
-                      <div className="mt-4">
-                        <div className="w-full bg-gray-800 rounded-full h-2.5">
-                          <div
-                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 relative overflow-hidden"
-                            style={{ width: `${downloadProgress}%` }}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-400 animate-pulse"></div>
-                          </div>
-                        </div>
-                        <p className="text-center mt-2 text-gray-400">{downloadProgress}%</p>
-                      </div>
-                    )}
-
-                    {error && (
-                      <div className="mt-4 p-4 bg-red-900/20 text-red-400 rounded-lg border border-red-800/50" role="alert">
-                        {error}
-                      </div>
-                    )}
-                  </div>
-                </div>
+          {/* Progress and Error States */}
+          <div className={`fixed bottom-4 left-4 right-4 bg-gray-900/95 backdrop-blur-sm p-4 rounded-lg 
+            border border-gray-800 shadow-xl transform transition-all duration-500 ease-in-out 
+            ${isDownloading || isFetching ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
+          >
+            <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 relative overflow-hidden"
+                style={{ 
+                  width: `${downloadProgress}%`,
+                  transition: 'width 0.3s ease-in-out'
+                }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-400 animate-pulse"></div>
               </div>
             </div>
+            <p className="text-center mt-2 text-gray-400">
+              {isFetching ? 'Preparing download...' : `${Math.round(downloadProgress)}%`}
+            </p>
           </div>
+
+          {error && (
+            <div className="fixed bottom-4 left-4 right-4 p-4 bg-red-900/20 text-red-400 rounded-lg border border-red-800/50" role="alert">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Download history sidebar */}
         <div 
           className={`fixed right-0 top-0 bottom-0 w-96 bg-gray-900/95 backdrop-blur-sm shadow-2xl 
-            flex flex-col border-l border-gray-800 transform transition-all duration-300 ease-in-out 
+            flex flex-col border-l border-gray-800 transform transition-all duration-500 ease-in-out 
             ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} z-40`}
         >
           <div className="p-4 bg-gray-900/80 border-b border-gray-800 backdrop-blur-sm flex justify-between items-center sticky top-0 z-10">
@@ -476,160 +425,33 @@ const App = () => {
               <button
                 onClick={() => setDeleteConfirmation({ id: 'all', title: 'all downloads' })}
                 className="px-3 py-1.5 text-sm text-red-400 hover:text-red-300 
-                  hover:bg-red-900/30 rounded-lg transition-colors flex items-center gap-1"
+                  hover:bg-red-900/30 rounded-lg transition-colors"
               >
-                <DeleteIcon />
                 Clear All
               </button>
             )}
           </div>
           
-          <div className="flex-1 overflow-y-auto">
-            <div className="divide-y divide-gray-800">
-              {downloadHistory.map((video) => (
-                <div key={video.id} className="group border-b border-gray-800 last:border-b-0 relative">
-                  {/* Delete button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteConfirmation({ id: video.id, title: video.title });
-                    }}
-                    className="absolute top-2 right-2 p-2 rounded-full bg-gray-800/80 text-gray-400 
-                      opacity-0 group-hover:opacity-100 hover:bg-red-600/80 hover:text-white 
-                      transition-all duration-200 z-10"
-                    title="Delete from history"
-                  >
-                    <DeleteIcon />
-                  </button>
-
-                  {/* Thumbnail and title container */}
-                  <div 
-                    className="p-4 cursor-pointer transition-all duration-200 relative group hover:bg-gray-800/50 rounded-lg"
-                    onClick={() => window.open(video.url, '_blank')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && window.open(video.url, '_blank')}
-                  >
-                    <div className="flex space-x-4">
-                      <div className="relative flex-shrink-0 group">
-                        {/* Thumbnail Container */}
-                        <div className="relative w-48 aspect-video overflow-hidden rounded-xl bg-gray-800">
-                          <img 
-                            src={video.thumbnail || FALLBACK_THUMBNAIL} 
-                            alt={video.title} 
-                            className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-300"
-                            loading="lazy"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.onerror = null; // Prevent infinite loop
-                              target.src = FALLBACK_THUMBNAIL;
-                            }}
-                          />
-                          {/* Play Button Overlay */}
-                          <div className="absolute inset-0 bg-black/40 group-hover:bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center">
-                            <div className="w-12 h-12 rounded-full bg-black/70 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-200">
-                              <PlayIcon />
-                            </div>
-                          </div>
-                          {/* Duration Badge */}
-                          <span className="absolute bottom-1 right-1 bg-black/90 text-white text-xs px-2 py-1 rounded font-medium">
-                            {video.duration}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-medium text-white group-hover:text-blue-400 transition-colors line-clamp-2 mb-1" title={video.title}>
-                          {video.title}
-                        </h3>
-                        <p className="text-xs text-gray-400">
-                          Downloaded: {new Date(video.downloadDate).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Format buttons container */}
-                  <div className="px-4 pb-4 flex gap-2">
-                    {/* MP4 Button Group */}
-                    <div className="flex-1">
-                      <div className="flex h-10 w-full">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            handleRedownload(video, 'mp4');
-                          }}
-                          className="flex-1 flex items-center justify-center gap-2 bg-gray-800/80 
-                            text-gray-300 rounded-l-md hover:bg-blue-600/20 hover:text-blue-400 
-                            transition-all duration-200"
-                        >
-                          <VideoIcon />
-                          <span>MP4</span>
-                        </button>
-                        {video.formats.mp4 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handleOpenFileLocation(video.formats.mp4?.filePath || '');
-                            }}
-                            className="w-10 bg-gray-800/80 text-gray-400 rounded-r-md border-l border-gray-700/50
-                              hover:bg-blue-600/20 hover:text-blue-400 transition-all duration-200
-                              flex items-center justify-center"
-                            title="Open file location"
-                          >
-                            <FolderIcon />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* MP3 Button Group */}
-                    <div className="flex-1">
-                      <div className="flex h-10 w-full">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            handleRedownload(video, 'mp3');
-                          }}
-                          className="flex-1 flex items-center justify-center gap-2 bg-gray-800/80 
-                            text-gray-300 rounded-l-md hover:bg-green-600/20 hover:text-green-400 
-                            transition-all duration-200"
-                        >
-                          <MusicIcon />
-                          <span>MP3</span>
-                        </button>
-                        {video.formats.mp3 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handleOpenFileLocation(video.formats.mp3?.filePath || '');
-                            }}
-                            className="w-10 bg-gray-800/80 text-gray-400 rounded-r-md border-l border-gray-700/50
-                              hover:bg-green-600/20 hover:text-green-400 transition-all duration-200
-                              flex items-center justify-center"
-                            title="Open file location"
-                          >
-                            <FolderIcon />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {downloadHistory.length === 0 && (
-                <div className="p-8 text-center text-gray-500">
-                  No downloads yet
-                </div>
-              )}
-            </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {downloadHistory.map((video) => (
+              <DownloadHistoryItem
+                key={video.id}
+                title={video.title}
+                url={video.url}
+                thumbnail={video.thumbnail}
+                onDownload={(url, format) => handleRedownload(video, format)}
+                onOpenLocation={(format) => handleOpenLocation(video, format)}
+              />
+            ))}
+            {downloadHistory.length === 0 && (
+              <div className="text-center text-gray-500 py-8">
+                No downloads yet
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Add confirmation dialog */}
+        {/* Delete confirmation dialog */}
         <DeleteConfirmation />
       </div>
     </div>
@@ -637,3 +459,4 @@ const App = () => {
 };
 
 export default App;
+

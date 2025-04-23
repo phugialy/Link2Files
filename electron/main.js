@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const ytdl = require('@distube/ytdl-core');
@@ -7,62 +7,46 @@ const YtDlpWrap = require('yt-dlp-wrap').default;
 let mainWindow;
 let ytDlp = null;
 
-// Configure session and headers
-const defaultHeaders = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': '*/*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
-  'Sec-Fetch-Mode': 'navigate',
-  'Sec-Fetch-Site': 'same-origin',
-  'Sec-Fetch-Dest': 'video',
-  'Referer': 'https://www.youtube.com/',
-  'Origin': 'https://www.youtube.com',
-  'Connection': 'keep-alive'
-};
-
-const configureSession = () => {
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    callback({
-      requestHeaders: {
-        ...details.requestHeaders,
-        ...defaultHeaders
-      }
-    });
+// Prevent multiple instances
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
+}
 
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self' https: http: data: blob: 'unsafe-inline' 'unsafe-eval'"]
-      }
-    });
-  });
-};
-
+// Create main window
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
+    backgroundColor: '#000000'
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  // Basic error handling for certificates
+  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    event.preventDefault();
+    callback(true);
+  });
+
+  // Load the app
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Security: Prevent navigation and new windows
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 }
 
 // Initialize yt-dlp
@@ -88,123 +72,8 @@ async function initYtDlp() {
   }
 }
 
-// Utility functions
-const isValidYouTubeUrl = (url) => {
-  try {
-    return ytdl.validateURL(url);
-  } catch (error) {
-    return false;
-  }
-};
-
-const getVideoId = (url) => {
-  try {
-    return ytdl.getURLVideoID(url);
-  } catch (error) {
-    throw new Error('Invalid YouTube URL');
-  }
-};
-
-// IPC Handlers
-ipcMain.handle('get-video-info', async (_, url) => {
-  try {
-    if (!isValidYouTubeUrl(url)) {
-      throw new Error('Invalid YouTube URL');
-    }
-
-    const videoId = getVideoId(url);
-    const info = await ytdl.getInfo(videoId, {
-      requestOptions: {
-        headers: defaultHeaders
-      },
-      client: {
-        rejectUnauthorized: false,
-        keepAlive: true,
-        timeout: 60000
-      },
-      cookiejar: true
-    });
-
-    const formats = info.formats
-      .filter(format => format.hasVideo && format.hasAudio && format.container === 'mp4')
-      .sort((a, b) => Number(b.qualityLabel?.replace('p', '')) - Number(a.qualityLabel?.replace('p', '')));
-
-    if (formats.length === 0) {
-      throw new Error('No suitable video format found');
-    }
-
-    return {
-      title: info.videoDetails.title,
-      formats,
-      videoDetails: {
-        title: info.videoDetails.title,
-        description: info.videoDetails.description,
-        lengthSeconds: info.videoDetails.lengthSeconds,
-        viewCount: info.videoDetails.viewCount
-      }
-    };
-  } catch (error) {
-    throw new Error(`Failed to fetch video info: ${error.message}`);
-  }
-});
-
-ipcMain.handle('download-video', async (event, { url, filePath, format }) => {
-  try {
-    if (!isValidYouTubeUrl(url)) {
-      throw new Error('Invalid URL');
-    }
-
-    if (!ytDlp) {
-      ytDlp = new YtDlpWrap();
-    }
-
-    const downloadOptions = format === 'mp3' 
-      ? ['-f', 'bestaudio', '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0']
-      : ['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4'];
-
-    const download = ytDlp.exec([
-      url,
-      ...downloadOptions,
-      '-o', filePath,
-      '--no-playlist',
-      '--progress-template', '%(progress._percent_str)s'
-    ]);
-
-    download.on('progress', (progress) => {
-      const progressMatch = progress.match(/(\d+\.\d+)%/);
-      if (progressMatch) {
-        event.sender.send('download-progress', parseFloat(progressMatch[1]));
-      }
-    });
-
-    await new Promise((resolve, reject) => {
-      download.on('close', resolve);
-      download.on('error', reject);
-    });
-
-    event.sender.send('download-complete');
-    return { success: true };
-  } catch (error) {
-    throw error;
-  }
-});
-
-ipcMain.handle('show-save-dialog', async (_, options) => {
-  try {
-    const ext = options.defaultPath.split('.').pop();
-    return await dialog.showSaveDialog(mainWindow, {
-      defaultPath: options.defaultPath,
-      filters: [{ name: ext === 'mp3' ? 'Audio' : 'Video', extensions: [ext] }],
-      properties: ['createDirectory', 'showOverwriteConfirmation']
-    });
-  } catch (error) {
-    throw new Error(`Save dialog failed: ${error.message}`);
-  }
-});
-
 // App lifecycle
 app.whenReady().then(async () => {
-  configureSession();
   await initYtDlp();
   createWindow();
 
@@ -218,5 +87,129 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+// IPC Handlers
+ipcMain.handle('get-video-info', async (_, url) => {
+  console.log('Fetching video info for:', url);
+  try {
+    if (!ytdl.validateURL(url)) {
+      throw new Error('Invalid YouTube URL');
+    }
+
+    const videoId = ytdl.getURLVideoID(url);
+    const info = await ytdl.getInfo(videoId);
+
+    return {
+      title: info.videoDetails.title,
+      formats: info.formats.filter(f => f.hasVideo && f.hasAudio),
+      videoDetails: {
+        title: info.videoDetails.title,
+        description: info.videoDetails.description,
+        lengthSeconds: info.videoDetails.lengthSeconds,
+        viewCount: info.videoDetails.viewCount,
+        thumbnails: info.videoDetails.thumbnails
+      }
+    };
+  } catch (error) {
+    console.error('Failed to fetch video info:', error);
+    throw new Error(`Failed to fetch video info: ${error.message}`);
+  }
+});
+
+ipcMain.handle('download-video', async (event, { url, filePath, format }) => {
+  console.log('Starting download:', { url, filePath, format });
+  try {
+    if (!ytdl.validateURL(url)) {
+      throw new Error('Invalid URL');
+    }
+
+    const downloadOptions = format === 'mp3' 
+      ? ['-f', 'bestaudio', '--extract-audio', '--audio-format', 'mp3']
+      : ['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'];
+
+    const download = ytDlp.exec([
+      url,
+      ...downloadOptions,
+      '-o', filePath,
+      '--no-playlist',
+      '--progress-template', '%(progress._percent_str)s'
+    ]);
+
+    download.on('progress', (progress) => {
+      try {
+        let progressValue = 0;
+        if (typeof progress === 'string') {
+          // Try to extract percentage from the progress string
+          const match = progress.match(/(\d+(?:\.\d+)?)/);
+          if (match) {
+            progressValue = parseFloat(match[1]);
+          }
+        } else if (typeof progress === 'object' && progress.percent != null) {
+          progressValue = progress.percent;
+        }
+        
+        // Only send valid progress values
+        if (!isNaN(progressValue) && progressValue >= 0 && progressValue <= 100) {
+          console.log('Sending progress:', progressValue);
+          event.sender.send('download-progress', progressValue);
+        }
+      } catch (err) {
+        console.error('Error processing progress:', err);
+      }
+    });
+
+    download.on('ytDlpEvent', (eventType, eventData) => {
+      console.log('yt-dlp event:', eventType, eventData);
+    });
+
+    await new Promise((resolve, reject) => {
+      download.on('close', () => {
+        event.sender.send('download-progress', 100);
+        setTimeout(() => {
+          event.sender.send('download-complete');
+          resolve();
+        }, 500);
+      });
+      download.on('error', reject);
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('show-save-dialog', async (_, options) => {
+  try {
+    return await dialog.showSaveDialog(mainWindow, {
+      defaultPath: options.defaultPath,
+      filters: [{ name: 'All Files', extensions: ['*'] }]
+    });
+  } catch (error) {
+    throw new Error(`Save dialog failed: ${error.message}`);
+  }
+});
+
+ipcMain.handle('open-file-location', async (_, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error('File does not exist');
+    }
+    await shell.showItemInFolder(filePath);
+    return { success: true };
+  } catch (error) {
+    throw new Error(`Failed to open file location: ${error.message}`);
+  }
+});
+
+ipcMain.handle('check-file-exists', async (_, filePath) => {
+  try {
+    return fs.existsSync(filePath);
+  } catch (error) {
+    console.error('Error checking file existence:', error);
+    return false;
   }
 }); 
